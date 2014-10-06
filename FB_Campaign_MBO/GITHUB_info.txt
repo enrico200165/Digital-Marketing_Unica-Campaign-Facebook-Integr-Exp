@@ -1,0 +1,20 @@
+
+Quick setup — if you've done this kind of thing before
+or
+HTTP SSH
+
+We recommend every repository include a README, LICENSE, and .gitignore.
+…or create a new repository on the command line
+
+touch README.md
+git init
+git add README.md
+git commit -m "first commit"
+git remote add origin git@github.com:enrico200165/EMM_FB_Campaign_MBO.git
+git push -u origin master
+
+…or push an existing repository from the command line
+
+git remote add origin git@github.com:enrico200165/EMM_FB_Campaign_MBO.git
+git push -u origin master
+

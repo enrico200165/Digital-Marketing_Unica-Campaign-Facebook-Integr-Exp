@@ -1,0 +1,6 @@
+{
+    "require": {
+        "monolog/monolog": "1.5.*",
+		"facebook/php-sdk": "dev-master"
+    }
+}

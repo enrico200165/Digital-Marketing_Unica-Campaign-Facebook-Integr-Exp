@@ -1,0 +1,864 @@
+<?php
+
+require 'vendor/autoload.php';
+
+use Monolog\Logger;
+use Monolog\Handler\StreamHandler;
+
+require_once 'PropertiesFile.php';
+
+
+class DBUtils {
+
+  function __construct($cfgFName, Logger $log) {
+    $this->log = $log;
+    $this->cfgFile = $cfgFName;
+    $this->conn = null;
+    $this->db_properties = new PropertiesFile($this->cfgFile, $this->log);
+    $this->fb_interests_table = $this->db_properties->get('fb_interests_table');
+    $this->fb_interests_column = $this->db_properties->get('fb_interests_column');
+  }
+
+  function updateCampaignProfiles($updates) {
+    $table = $this->fb_interests_table;
+    $column = $this->fb_interests_column;
+
+    if (!isset($this->conn)) {
+      $this->connectToDB();
+    }
+    try {
+      $this->conn->beginTransaction();
+      foreach($updates as $update) {
+        $val = $update[2];
+        if (!isset($val) or strlen($val) <=0 ) {
+          continue;
+        }
+        $EMMId = $update[1];
+        $stmt = "UPDATE [dcc].[dbo].[$table]"
+        . " SET [$column] = '$val'"
+        . " WHERE Indiv_ID = '$EMMId'";
+        // $this->log->addDebug("statement:\n\"$stmt\"");
+        $this->conn->exec($stmt);
+        $this->conn->commit();
+
+        // for debugging
+        $stmt = "SELECT [$column] FROM [dcc].[dbo].[$table] WHERE Indiv_ID = '$EMMId'";
+        // $this->log->addDebug("statement:\n\"$stmt\"");
+        $ret = $this->conn->query($stmt);
+        $result = $ret->fetchAll(PDO::FETCH_ASSOC);
+        $newVal = $result[0][$column];
+        $this->log->addInfo("interests of user with Campaign ID $EMMId set, from Facebook, to $newVal");
+      }
+    } catch(Exception $e) {
+      if (strpos($e->getMessage(), 'Invalid column name') !== false) {
+        $this->log->addError("column $column not found in table $table ");
+      } else {
+        print_r($e);
+      }
+    }
+    $this->conn = null;
+    return;
+  }
+
+
+  function getProp($property) {
+    return $this->db_properties->get($property);
+  }
+
+  function connectToDB() {
+    if (isset($this->conn))
+      return $this->conn;
+
+    $serverName = $this->getProp('server_name');
+    $dbName = $this->getProp('db_name');
+    $uid = $this->getProp('db_user');
+    $pwd = $this->getProp('db_pwd');
+
+    try {
+      $this->conn = new PDO( "sqlsrv:server=$serverName ; Database=dcc", "sa", "unica*03");
+      $this->conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+      $this->conn->setAttribute( PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION );
+    } catch(Exception $e) {
+      $this->log->addError("fallisce");
+      $this->log->addError(print_r( $e->getMessage(),true ));
+      $this->conn = null;
+    }
+    return $this->conn;
+  }
+
+
+  function simpleTestDB() {
+     
+
+    $this->log->addInfo("comincio");
+    $tsql = "SELECT * FROM dbo.indiv_contact WHERE Indiv_ID < 10";
+
+    $stmt = $this->connectToDB()->query($tsql);
+    $result = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    foreach ($result as $row) {
+      print_r($row);
+    }
+    $productCount = count($result);
+    if($productCount > 0) {
+      print("ci sono prodotti: " . $productCount);
+    } else {
+      print("NIENTE");
+    }
+  }
+
+  /**
+   * NOT used
+   * @param unknown_type $tableName
+   */
+  function createFBUsersTable($tableName = "FBUsers") {
+    $stmt =
+    "CREATE TABLE [dcc].[dbo].[FBUsers] ("
+    .	" [FB_ID] [varchar](256) NOT NULL,"
+    . " [UC_ID] [int] NOT NULL,"
+    .	" [FB_app_token] [varchar](256) NULL,"
+    .	" [FB_user_name] [varchar](64) NULL,"
+    .	" [FB_user_surname] [varchar](64) NULL,"
+    .	" [FB_Interests] [varchar](256) NULL,"
+    . " PRIMARY KEY (FB_ID)"
+    . " )"  ;
+
+    $log->addInfo($stmt);
+    $conn = connectToDB();
+    $conn->query($stmt);
+
+    $conn = null;
+  }
+
+
+
+  function tableExists($tableName, $conn = null) {
+    global $log;
+    if ($conn == null) {
+      $conn = connectToDB();
+    }
+    try {
+      $result = $conn->exec("SELECT count(*) FROM $tableName");
+      $tableExists = (gettype($result) == "integer")? true:false;
+    } catch (Exception $e) {
+      // $log->addInfo(print_r($e,true));
+      return false;
+    }
+    return $tableExists;
+  }
+
+  private $cfgFile;
+  private $log;
+  private $conn;
+  private $db_properties;
+  private $fb_interests_table;
+  private $fb_interests_column;
+}
+
+<?php
+
+require 'vendor/autoload.php';
+//require_once 'PropertiesFile.php';
+//require_once 'utils.php';
+//require_once 'FBUser.php';
+// require_once 'FBUsersTokens.php';
+
+
+use Monolog\Logger;
+use Monolog\Handler\StreamHandler;
+
+
+
+
+
+
+
+
+<?php
+
+require 'vendor/autoload.php';
+//require_once 'PropertiesFile.php';
+//require_once 'utils.php';
+//require_once 'FBUser.php';
+//require_once 'FBUsersTokens.php';
+// require_once 'EVFBUtils.php';
+//require_once 'FBTokenBase.php';
+
+use Monolog\Logger;
+use Monolog\Handler\StreamHandler;
+
+
+/**
+ * At the moment it does practically nothing and its existence is
+ * justfied  only because it reduceces the amount of code in the main
+ * file
+ * @author enrico200165@gmail.com
+ *
+ */
+class FBApplication {
+
+  function __construct($appInfoArray, $facebook,Logger $log) {
+
+    $this->appID = $appInfoArray['appId'];
+    $this->appSecret = $appInfoArray['secret'];
+    $this->facebook = $facebook;
+    $this->log = $log;
+
+  }
+
+
+  /**
+   * Reads, if any, the test users of the application and writes
+   * them in a file that might be re-used, after having being completed
+   * and corrected manually, to reduce manual work
+   */
+  function readTestUsers($readProfile, $writeSampleFile) {
+    // https://graph.facebook.com/APP_ID/accounts/test-users?access_token=APP_ACCESS_TOKEN
+    $url = "/" . $this->appID . "/accounts/test-users";
+    $testUsersData = $this->facebook->api($url);//,array('access_token' => SAMPLE_UTOKEN));
+
+    foreach ($testUsersData['data'] as $ud) {
+      $this->log->addDebug("read test user $ud[id]");
+      $u= new FBUser($ud['id'], $this->facebook,$this->log, $ud);
+      if ($readProfile) {
+        $u->readProfile();
+      }
+      $testUsers[] = $u;
+      $lines[] = $u->lineForUserTokenFile(); // only used to write files, no "if" to keep code simple
+    }
+    if ($writeSampleFile) {
+      linesArrayToTxtFile("../data/FBUsersTokensTestUsersSample.properties", $lines);
+    }
+    $this->testUsers = $testUsersData['data'];
+    return $this->testUsers;
+  }
+
+
+  function getTestusersArray() {
+    return $this->testUsers;
+  }
+
+
+  private
+  $appID,
+  $appSecret,
+  $facebook,
+  $log,
+  $testUsers;
+}
+<?php
+
+require_once 'PropertiesFile.php';
+
+
+class FBTargetUsersAndTokens {
+  
+  const FNAME = "../data/usersTokens";
+  
+  function __construct($fname,$log) {
+    $this->log = $log;
+    $FBUTproperties = new PropertiesFile($fname, $log);
+    foreach($FBUTproperties->getAllProperties() as $p => $val) {
+      //echo "\n".$p . " = " . $val;
+   
+      $matches = [];
+      preg_match ("/utoken{([^}]*)}/", $val, $matches );
+      $this->users[$p]['utoken'] = $matches[1]; 
+      
+      $matches = [];
+      preg_match ("/emmID{([^}]*)}/", $val, $matches );
+      $this->users[$p]['emmID'] = $matches[1]; 
+    }
+  }
+
+  function getUserToken($user) {
+    return $this->users[$user]['utoken'];
+  }
+  
+  function getEMMID($user) {
+    return $this->users['emmID']['utoken'];
+  }
+  
+  function dump() {
+    foreach($this->users as $id => $u) {
+      echo "\nFBId=$id token=". $this->getUserToken($id); 
+    }
+  }
+  
+  function getUsers() {
+    return $this->users;
+  }
+  
+  private $users;
+  private $log;
+}
+<?php
+
+require 'vendor/autoload.php';
+
+use Monolog\Logger;
+use Monolog\Handler\StreamHandler;
+
+
+class FBTokenBase {
+
+  function __construct($val, Facebook $facebook, Logger $log) {
+    $this->token = $val;
+    $this->facebook = $facebook;
+    $this->log = $log;
+  }
+
+  function get() {
+    return $this->token;
+  }
+
+
+  function isValid( $forceRead = false) {
+    if ($forceRead) {
+      $this->readFromFB();
+    }
+    if (!isset($this->data)) {
+      $this->readFromFB();
+    }
+    $ret = $this->data['is_valid'];
+    return $ret;
+  }
+
+  function expires_at() {
+    if (isset($this->data['expires_at'])) {
+      return $this->data['expires_at'];
+    } else {
+      return 0;
+    }
+  }
+
+
+  function readFromFB() {
+    $data = $this->facebook->api("/debug_token", array(
+        'input_token' => $this->get(),
+        // 'access_token' => $access_token,
+    ));
+    $this->data = $data['data'];
+    return $this->data;
+  }
+
+  function dump($msg,$facebook,$access_token, $quiet = true) {
+
+    $ret = $this->readFromFB();
+
+    if (isset($ret)) {
+      $ret['token'] = $this->get();
+      if (isset($ret['data']['expires_at'])) {
+        $ret['data']['expires_at_formatted'] = timeFromUnix($ret['data']['expires_at']);
+      }
+      if ($quiet and  $ret['data']['is_valid'] ==1) {
+        return "";
+      } else {
+        return $msg . "\n" . print_r($ret,true);
+      }
+    } else {
+      return "";
+    }
+  }
+
+  private $data;
+  private $facebook;
+  private $token;
+  private $log;
+}<?php 
+
+require 'vendor/autoload.php';
+
+use Monolog\Logger;
+use Monolog\Handler\StreamHandler;
+
+
+class FBUser {
+
+  function __construct($FBId, Facebook $facebook, Logger $log , $dataArr = null) {
+    if (isset($dataArr)) {
+      $this->FBId = $dataArr['id'];
+      $this->access_token =  isset($dataArr['access_token']) ? $dataArr['access_token'] : null;
+      $this->login_url =  isset($dataArr['login_url']) ? $dataArr['login_url'] : null;
+      $this->data = $dataArr;
+    } else {
+      $this->FBId = $FBId;
+    }
+    $friends = null;
+    $this->facebook = $facebook;
+    $this->log = $log;
+  }
+
+  public static function FromDataFile($id,$data, Facebook $facebook, Logger $log ) {
+
+    $instance = new self($id,$facebook, $log, null);
+    $instance->emmId = $data['emmID'];
+    $instance->access_token = $data['utoken'];
+
+    return $instance;
+  }
+
+
+
+  function lineForUserTokenFile() {
+    $emmId = isset($this->emmId) ? $this->emmId : "#fake, replace this" . time() . "#";
+    $loginUrl = isset($this->login_url) ? $this->login_url : null;
+
+    $ret = $this->FBId . "=" ."emmID{". $emmId .  "}";
+    if (isset($loginUrl))
+      $ret .= "login_url{" . $loginUrl . "}";
+    $ret .= "utoken{" . $this->access_token . "}";
+
+    return $ret;
+  }
+
+  function dump() {
+    $ret = "";
+    $ret .= "FBId=" . $this->FBId;
+    $ret .= "\nemmId=" . getStrVal($this->emmId);
+    $ret .= "\naccess_token=" . getStrVal($this->access_token);
+    $ret .= "\ninterests=" . getStrVal($this->interests);
+
+    //   $ret .= "\n" . ;
+    // $ret .= "\n" . ;
+    //        return print_r($this,true);
+    return $ret;
+  }
+
+  function getFBId() {
+    return $this->FBId;
+  }
+
+  function readFB($what, $dump = false) {
+    $url = '/'. $this->FBId . "/" . $what;
+    try {
+      $this->$what = $this->facebook->api($url);
+      $tmp = $this->$what;
+      if (isset($tmp['data'])) {
+        $tmp = $tmp['data'];
+        if (count($tmp) > 0) {
+          $this->log->addInfo("for FB uid: {$this->getFBId()} read {$what}" );
+        }
+      }
+
+      $this->data[$what] = null; // meglio a null che indefinito
+      foreach($tmp as $cur) {
+        $this->data[$what][] = $cur;
+      }
+      if ($dump) {
+        print_r($this->data[$what]);
+      }
+    } catch(Exception $e) {
+      $this->log->addError( "graph API error with $url "
+          . "\ntrapped at file, line:". __FILE__
+          . ", ". __LINE__
+          . "\n" . print_r($e.true));
+    }
+  }
+
+  function getInterestsNameList() {
+    if (!isset($this->interests)) {
+      return [];
+    }
+
+    $data = $this->interests['data'];
+    $interestNames = [];
+    foreach($data as $interest) {
+      $interestNames[] = $interest['name'];
+    }
+    return $interestNames;
+  }
+
+  function hasToken() {
+    return isset($this->access_token);
+  }
+
+
+  function isTokenValid() {
+    $token = new FBTokenBase($this->access_token,$this->facebook,$this->log);
+    $ret = $token->isValid(true);
+    if (!$ret) {
+      $msg = "fb uid $this->FBId: token not valid ";
+      if ($token->expires_at() != 0) {
+        $msg .= "expired at " . timeFromUnix($token->expires_at());
+      }
+      $this->log->addInfo($msg);
+    }
+    return $ret;
+  }
+
+  function readProfile() {
+    if (!$this->hasToken()) {
+      $this->log->addWarning("cannot read profile for uid: " .
+          $this->getFBId() . " because it does NOT have a user token");
+      return[];
+    }
+    if (!$this->isTokenValid()) {
+      $this->log->addWarning("cannot read profile for FB uid: " .
+          $this->getFBId() . " Campaign UID: ". $this->getEMMId() . " because token expired");
+      return[];
+    }
+    try {
+      $url = '/'. $this->FBId;
+      $this->data = $this->facebook->api($url,
+          array('access_token' => $this->access_token));
+
+      $this->readFB("friends", false);   // valid token
+      $this->readFB("interests", false); // user_interests permission
+      $this->readFB("movies", false); //
+      $this->readFB("activities", false);
+      $this->readFB("books", false);
+      $this->readFB("groups", false);
+      $this->readFB("music", false);
+
+
+      // print_r($this->data);
+      return $this->data;
+    } catch(Exception $e) {
+      print_r($e);
+    }
+  }
+
+  function getEMMId() {
+    return $this->emmId;
+  }
+
+
+  private $FBId;
+  private $emmId;
+  private $facebook;
+  private $access_token;
+  private $login_url;
+  private $friends;
+  private $data;
+  private $interests;
+
+  private $log;
+}
+<?php 
+
+require 'vendor/autoload.php';
+
+use Monolog\Logger;
+
+require_once 'FBUser.php';
+require_once 'InterestsMapper.php';
+
+/**
+ * Developed in a hurry just to group operations on a list of users
+ * @author Administrator
+ *
+ */
+
+class FBUsersCollection {
+
+  function __construct($fb, $log) {
+    $this->facebook = $fb;
+    $this->log = $log;
+  }
+
+  public static function FromFileArrays($usersArray, Facebook $facebook,Logger $log ) {
+
+    $instance = new self($facebook, $log);
+
+    foreach($usersArray as $id => $val) {
+      $u = FBUser::FromDataFile($id,$val,$facebook,$log);
+      $u->readProfile();
+      $instance->users[] = $u;
+    }
+    return $instance;
+  }
+
+  function dump() {
+    foreach($this->users as $u) {
+      $this->log->addInfo("\n".$u->dump() . "\n");
+    }
+  }
+
+  function getUsers() {
+    return $this->users;
+  }
+
+  function createUpdatesList(InterestsMapper $mapper) {
+    $updates = [];
+    foreach($this->users as $u) {
+      $origInterests = $u->getInterestsNameList();
+      $mapped = $mapper->getMappedInterestList($origInterests);
+      //print_r($origInterests); print_r($mapped);
+      $updates[] = array($u->getFBId(), $u->getEMMId(), implode(":", $mapped));
+    }
+    return $updates;
+  }
+
+
+  private $users;
+  private $facebook;
+  private $log;
+}
+<?php 
+
+require 'vendor/autoload.php';
+require_once 'PropertiesFile.php';
+
+use Monolog\Logger;
+use Monolog\Handler\StreamHandler;
+
+
+class InterestsMapper {
+
+  function __construct($fname, Logger $log ) {
+    $this->log = $log;
+    $interestsProperties = new PropertiesFile($fname,$log);
+    $interestsProperties->parsePropertiesFile(null, true);
+    $mappings = $interestsProperties->getAllProperties();
+    foreach ($mappings as $target => $mappeeInterestsAll) {
+      //print_r(str_getcsv($mappeeInterests));
+      $target = trim($target);
+      $mappeeInterests = str_getcsv($mappeeInterestsAll);
+      foreach ($mappeeInterests as $i ) {
+        $i=trim($i);
+        $this->map[$i] = $target;
+      }
+    }
+  }
+
+  function dump() {
+    foreach ($this->map as $source => $dest) {
+      print("\n\"$source\" -> \"$dest\"");
+    }
+  }
+
+  function getMappedInterest($original) {
+    if (isset($this->map[$original])) {
+      //$this->log->addDebug("map $original on ".$this->map[$original]);
+      return $this->map[$original];
+    } else {
+      $this->log->addWarning("interest $original does not have a mapping");
+      return "#unmapped#";
+    }
+  }
+
+  function getMappedInterestList($originalList) {    
+    $mappedList = [];
+    foreach($originalList as $i) {
+      $mappedList[] = $this->getMappedInterest($i); 
+    }
+    return array_unique($mappedList);
+  }
+  
+  
+  
+  function dummyTest() {
+    foreach ($this->map as $source => $dest) {
+      $this->log->addInfo("$source --maps-to--> " . $this->getMappedInterest($source));
+    }
+  }
+
+  private $map;
+  private  $log ;
+}<?php  
+
+require 'vendor/autoload.php';
+
+use Monolog\Logger;
+use Monolog\Handler\StreamHandler;
+
+class PropertiesFile {
+
+  function __construct($filePathName , Logger $log) {
+    $this->log = $log;
+
+    $this->fname = $filePathName;
+    $this->properties = null;
+    if (isset($this->fname)) {
+      $this->parsePropertiesFile($this->fname);
+    }
+  }
+
+  function parsePropertiesString($txtProperties) {
+    // http://blog.rafaelsanches.com/2009/08/05/reading-java-style-properties-file-in-php/
+    $result = array();
+    $lines = split("\n", $txtProperties);
+    $key = "";
+    $isWaitingOtherLine = false;
+    foreach($lines as $i=>$line) {
+      if(empty($line) || (!$isWaitingOtherLine && strpos($line,"#") === 0))
+        continue;
+      if(!$isWaitingOtherLine) {
+        $key = substr($line,0,strpos($line,'='));
+        $value = substr($line,strpos($line,'=') + 1, strlen($line));
+      } else {
+        $value .= $line;
+      } /* Check if ends with single '\' */
+      if(strrpos($value,"\\") === strlen($value)-strlen("\\")) {
+        $value = substr($value, 0, strlen($value)-1)."\n";
+        $isWaitingOtherLine = true;
+      } else {
+        $isWaitingOtherLine = false;
+      }
+      $result[$key] = $value;
+      unset($lines[$i]);
+    }
+    // print_r($result);
+    return $result;
+  }
+
+  function parsePropertiesFile($fname, $force = false) {
+    if (!isset($fname)) {
+      $fname = $this->fname;
+    }
+    if (isset($this->properties) and !$force) {
+      $this->log->addWarning($this->fname . " already parsed");
+      return;
+    }
+    $users = file_get_contents($fname . ".properties");
+    $this->properties = $this->parsePropertiesString($users);
+  }
+
+  function dump() {
+    if (!isset($this->properties) ) {
+      $this->log->addWarning("dumping unparsed properties: " . $this->fname );
+      return "";
+    }
+    foreach ($this->properties as $prop => $val) {
+      print("\n".$prop . "=" . $val);
+    }
+  }
+
+  function get($propertyName) {
+    if (!isset($this->properties)) {
+      $this->log->addError("uproperties not parsed: " . $this->fname);
+      return "";
+    }
+    if (!isset($this->properties[$propertyName])) {
+      $this->log->addError("property not defined: " . $propertyName);
+      return null;
+    }
+    return $this->properties[$propertyName];
+  }
+
+  function getAllProperties() {
+    return $this->properties;
+  }
+
+
+  const SAMPLE_IGNORE = 'fbss';
+
+  private $fname;
+  private $properties;
+  private $log;
+};
+
+
+
+
+<?php
+
+ini_set('display_errors','stderr');
+set_include_path( ".." . PATH_SEPARATOR . get_include_path());
+date_default_timezone_set('UTC');
+
+require 'vendor/autoload.php';
+
+require_once 'PropertiesFile.php';
+require_once 'utils.php';
+require_once 'FBUser.php';
+require_once 'FBTargetUsersAndTokens.php';
+require_once 'FBUsersCollection.php';
+require_once 'EVFBUtils.php';
+require_once 'FBTokenBase.php';
+require_once 'FBApplication.php';
+require_once 'InterestsMapper.php';
+require_once 'DBUtils.php';
+
+
+
+use Monolog\Logger;
+use Monolog\Handler\StreamHandler;
+
+// echo __LINE__;
+
+
+
+define("EMM_DEMO_DIR", "C:/Unica/Campaign/partitions/partition1/Demo");
+define("EMM_BROWSER","C:/Program Files (x86)/Mozilla Firefox/firefox.exe");
+
+
+// -------------------------------------------------------------------------
+$log = new Logger("main_logger");
+$log->pushHandler(new StreamHandler('../logs/detailed.log', Logger::DEBUG));
+$log->pushHandler(new StreamHandler('php://stdout', Logger::WARNING));
+
+$log->addInfo("working dir: " . getcwd());
+
+
+$interestsMapper = new InterestsMapper("../data/interestsMap",$log); // $interestsMapper->dummyTest();
+
+try {
+
+  $appProperties = new PropertiesFile("../data/appInfo", $log);
+  $appInfo = array(
+      'appId' => $appProperties->get('appId'),
+      'secret' => $appProperties->get('appSecret'),
+  );
+
+  // currently not used
+  $appToken = $appProperties->get('AppToken');
+  
+  
+  $facebook = new Facebook($appInfo);
+
+  // not strictly necessary
+  $fbApp = new FBApplication($appInfo,$facebook,$log);
+
+  
+  // test reading from FB the list of test users
+  // $testUsers = $fbApp->readTestUsers(true, true);print_r($testUsers);
+
+  // read users from file
+  $keyUsers = new FBTargetUsersAndTokens("../data/usersTokens",$log);
+  $fbUsersColl = FBUsersCollection::FromFileArrays($keyUsers->getUsers() ,$facebook,$log);
+  
+  $updates = $fbUsersColl->createUpdatesList($interestsMapper);
+  // print_r($updates);
+  
+  $db = new DBUtils("../data/db",$log);
+  $db->connectToDB();
+  $db->updateCampaignProfiles($updates);
+  
+  
+  echo "ended, normally";
+} catch (Exception $e) {
+  print_r($e);
+  $log->addError($e);
+}
+
+?><?php
+
+
+function linesArrayToTxtFile($pathname, $lines) {
+  $file = fopen($pathname, "w");
+  foreach ($lines as $line) {
+    fwrite($file, $line . "\n");
+  }
+  fclose($file);
+}
+
+
+function timeFromUnix($unixTime) {
+  date_default_timezone_set("Europe/Rome");
+  return date("Y-m-d H:i:s", $unixTime);
+}
+
+function getStrVal($orig,$def = null) {
+  return  isset($orig)?  $orig : null;
+}
+
+function launchBrowser($browser,$url) {
+  $output = [];
+  $return_var = 0;
+  $cmd="\"$browser\" \"$url\"";
+  exec($cmd, $output, $return_var);
+  print_r($output);
+}
+
